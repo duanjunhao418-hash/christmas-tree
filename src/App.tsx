@@ -434,11 +434,20 @@ const GestureController = ({ onGesture, onMove, onStatus, debugMode }: any) => {
     let timeoutId: number;
 
     const setup = async () => {
+      // 检测移动设备
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      
+      if (isMobile) {
+        // 移动设备直接跳过 AI，使用手动控制
+        onStatus("MOBILE MODE: Use buttons to control");
+        return;
+      }
+
       onStatus("DOWNLOADING AI...");
       
-      // 添加超时处理（15秒）
+      // 添加超时处理（10秒，缩短等待时间）
       const timeoutPromise = new Promise((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error('AI loading timeout')), 15000);
+        timeoutId = setTimeout(() => reject(new Error('AI loading timeout')), 10000);
       });
 
       try {
@@ -469,12 +478,12 @@ const GestureController = ({ onGesture, onMove, onStatus, debugMode }: any) => {
             predictWebcam();
           }
         } else {
-            onStatus("ERROR: CAMERA NOT AVAILABLE");
+            onStatus("CAMERA NOT AVAILABLE");
         }
       } catch (err: any) {
         clearTimeout(timeoutId);
         const errorMsg = err.message || 'MODEL FAILED';
-        onStatus(`AI DISABLED: ${errorMsg.includes('timeout') ? 'Use manual controls' : 'Use buttons'}`);
+        onStatus(`AI DISABLED: ${errorMsg.includes('timeout') ? 'Timeout' : 'Error'} - Use buttons`);
         console.error('GestureController error:', err);
       }
     };
