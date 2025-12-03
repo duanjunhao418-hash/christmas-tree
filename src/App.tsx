@@ -431,22 +431,37 @@ const GestureController = ({ onGesture, onMove, onStatus, debugMode }: any) => {
   useEffect(() => {
     let gestureRecognizer: GestureRecognizer;
     let requestRef: number;
+    let timeoutId: number;
 
     const setup = async () => {
       onStatus("DOWNLOADING AI...");
+      
+      // 添加超时处理（15秒）
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('AI loading timeout')), 15000);
+      });
+
       try {
-        const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
-        gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
-            delegate: "GPU"
-          },
-          runningMode: "VIDEO",
-          numHands: 1
-        });
+        // 使用 Promise.race 来处理超时
+        await Promise.race([
+          (async () => {
+            const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
+            gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
+              baseOptions: {
+                modelAssetPath: "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
+                delegate: "GPU"
+              },
+              runningMode: "VIDEO",
+              numHands: 1
+            });
+            clearTimeout(timeoutId);
+          })(),
+          timeoutPromise
+        ]);
+
         onStatus("REQUESTING CAMERA...");
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
           if (videoRef.current) {
             videoRef.current.srcObject = stream;
             videoRef.current.play();
@@ -454,10 +469,13 @@ const GestureController = ({ onGesture, onMove, onStatus, debugMode }: any) => {
             predictWebcam();
           }
         } else {
-            onStatus("ERROR: CAMERA PERMISSION DENIED");
+            onStatus("ERROR: CAMERA NOT AVAILABLE");
         }
       } catch (err: any) {
-        onStatus(`ERROR: ${err.message || 'MODEL FAILED'}`);
+        clearTimeout(timeoutId);
+        const errorMsg = err.message || 'MODEL FAILED';
+        onStatus(`AI DISABLED: ${errorMsg.includes('timeout') ? 'Use manual controls' : 'Use buttons'}`);
+        console.error('GestureController error:', err);
       }
     };
 
@@ -492,7 +510,10 @@ const GestureController = ({ onGesture, onMove, onStatus, debugMode }: any) => {
       }
     };
     setup();
-    return () => cancelAnimationFrame(requestRef);
+    return () => {
+      cancelAnimationFrame(requestRef);
+      clearTimeout(timeoutId);
+    };
   }, [onGesture, onMove, onStatus, debugMode]);
 
   return (
